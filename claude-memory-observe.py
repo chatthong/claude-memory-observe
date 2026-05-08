@@ -453,7 +453,7 @@ def render_menu() -> None:
     width = 60
     print()
     print(blue("╔" + "═" * (width - 2) + "╗"))
-    title = " Claude Memory Observer — Bonfire workspace "
+    title = " Claude Memory Observer "
     print(blue("║") + bold(title.center(width - 2)) + blue("║"))
     print(blue("╠" + "═" * (width - 2) + "╣"))
     items = [
@@ -475,12 +475,123 @@ def render_menu() -> None:
     print(blue("╚" + "═" * (width - 2) + "╝"))
 
 
+def _list_existing_memory_dirs() -> list[dict]:
+    """Discover all Claude Code memory dirs under ~/.claude/projects/*/memory/."""
+    base = Path.home() / ".claude" / "projects"
+    if not base.exists():
+        return []
+    out: list[dict] = []
+    for proj in sorted(base.iterdir()):
+        memdir = proj / "memory"
+        if not memdir.is_dir():
+            continue
+        try:
+            md_files = [f for f in memdir.glob("*.md") if f.name != "MEMORY.md"]
+            count = len(md_files)
+            mtime = max(
+                (f.stat().st_mtime for f in md_files),
+                default=memdir.stat().st_mtime,
+            )
+        except OSError:
+            continue
+        out.append({
+            "path": memdir,
+            "encoded": proj.name,
+            "count": count,
+            "mtime": mtime,
+        })
+    out.sort(key=lambda d: d["mtime"], reverse=True)
+    return out
+
+
+def _box_print(content: str, inner_w: int) -> None:
+    """Print one line inside the blue box; pad based on visible (non-ANSI) length."""
+    pad = inner_w - visible_len(content)
+    print(blue("║") + content + " " * max(0, pad) + blue("║"))
+
+
+def render_no_memory_screen(missing: Path) -> Path | None:
+    """Boxed error screen with a picker for existing memory dirs.
+
+    Returns the chosen Path, or None to exit.
+    """
+    width = min(term_width() - 2, 92)
+    inner = width - 2
+
+    print()
+    print(blue("╔" + "═" * inner + "╗"))
+    title = "✗  No Claude memory directory found"
+    _box_print(red(bold(title.center(inner))), inner)
+    print(blue("╠" + "═" * inner + "╣"))
+
+    _box_print("", inner)
+    _box_print("  " + bold("Looked at:"), inner)
+    missing_str = str(missing)
+    if len(missing_str) > inner - 6:
+        missing_str = "…" + missing_str[-(inner - 7):]
+    _box_print("    " + dim(missing_str), inner)
+    _box_print("", inner)
+
+    _box_print("  " + bold("Why:"), inner)
+    _box_print("    Claude Code keys auto-memory by the directory it was launched from.", inner)
+    _box_print("    The current working dir doesn't have a memory store yet.", inner)
+    _box_print("", inner)
+
+    existing = _list_existing_memory_dirs()
+    if existing:
+        _box_print("  " + bold("Existing memory dirs on this machine:"), inner)
+        for i, d in enumerate(existing, 1):
+            ts = datetime.fromtimestamp(d["mtime"]).strftime("%Y-%m-%d")
+            num = bold(f"[{i:>2}]")
+            count_s = green(f"{d['count']:>3} entries")
+            sep = dim("·")
+            # Cap encoded name to fit in inner width.
+            base_overhead_visible = visible_len(f"    [{i:>2}]    ·    {d['count']:>3} entries  ·  {ts}")
+            avail = inner - base_overhead_visible - 2
+            name_str = d["encoded"]
+            if len(name_str) > avail and avail > 5:
+                name_str = name_str[: avail - 1] + "…"
+            line = f"    {num}  {cyan(name_str)}  {sep}  {count_s}  {sep}  {dim(ts)}"
+            _box_print(line, inner)
+        _box_print("", inner)
+
+    _box_print("  " + bold("Or override explicitly:"), inner)
+    _box_print("    " + dim("./claude-memory-observe.py --memory-dir <path>"), inner)
+    _box_print("    " + dim("CLAUDE_MEMORY_DIR=<path> ./claude-memory-observe.py"), inner)
+    _box_print("", inner)
+
+    print(blue("╚" + "═" * inner + "╝"))
+    print()
+
+    if not existing:
+        print(yellow("  No existing memory dirs to pick from. Exiting."))
+        print()
+        return None
+
+    raw = input(cyan("→ Pick a memory dir to use, or blank to exit: ")).strip()
+    if not raw:
+        print(green("✓ Bye."))
+        return None
+    if not raw.isdigit():
+        print(red("✗ Not a number — exiting."))
+        return None
+    n = int(raw)
+    if 1 <= n <= len(existing):
+        chosen = existing[n - 1]["path"]
+        print(green(f"✓ Using {chosen}"))
+        return chosen
+    print(red(f"✗ No option #{n} — exiting."))
+    return None
+
+
 def main() -> int:
+    global MEMORY_DIR, INDEX_FILE
     if not MEMORY_DIR.exists():
-        print(red(f"✗ ERROR: memory dir not found: {MEMORY_DIR}"), file=sys.stderr)
-        print(dim("  Override with $CLAUDE_MEMORY_DIR or --memory-dir <path>"), file=sys.stderr)
-        print(dim(f"  (default derives from cwd: {Path.cwd()})"), file=sys.stderr)
-        return 1
+        chosen = render_no_memory_screen(MEMORY_DIR)
+        if chosen is None:
+            return 0
+        MEMORY_DIR = chosen
+        INDEX_FILE = MEMORY_DIR / "MEMORY.md"
     cmd_stats(load_all())
     while True:
         entries = load_all()
