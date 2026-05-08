@@ -43,6 +43,7 @@ The menu groups commands by intent — **READ**, **MODIFY**, **MAINTAIN**, **DAN
 | MAINTAIN | `[7]` Rebuild | Regenerate `MEMORY.md` from frontmatter |
 | MAINTAIN | `[8]` Stats | Counts per type, orphan / missing index refs, recent edits |
 | DANGER ZONE | `[w]` Wipe | Destroy the **currently-selected** memory dir only (typed-confirm + optional timestamped backup). Other projects' memory dirs are untouched. |
+| DANGER ZONE | `[n]` Nuke | Wipe memory **across every Claude Code project** on this machine (typed `NUKE ALL` confirm + optional per-project timestamped backup). Resets you to a 'fresh Claude' state for memory specifically. Other Claude Code state under `~/.claude/` is untouched. |
 
 ## 🚀 Quickstart
 
@@ -85,6 +86,7 @@ cd claude-memory-observe
 ║                                                                    ║
 ║  DANGER ZONE                                                       ║
 ║     [w]  Wipe memory (-Users-me-code-myproject)                    ║
+║     [n]  Nuke ALL Claude memory (every project, system-wide)       ║
 ║                                                                    ║
 ║     [q]  Quit                                                      ║
 ╚════════════════════════════════════════════════════════════════════╝
@@ -161,6 +163,14 @@ The index (`MEMORY.md`) is generated from these. **Rebuilding overwrites it.**
   — a y/N prompt would be too easy. By default it offers to move the
   existing memory dir to a timestamped backup
   (`memory.bak.<YYYYMMDD-HHMMSS>/`) before recreating an empty one.
+- **"Nuke" is the maximum-blast option.** It wipes memory across **every
+  Claude Code project** on this machine, leaving you with a 'fresh Claude'
+  state for memory specifically. To confirm you must type the literal
+  phrase `NUKE ALL` — no project-key shortcut, since the operation isn't
+  scoped to one project. By default each project's `memory/` dir is moved
+  aside to `memory.bak.<YYYYMMDD-HHMMSS>/` before being recreated empty,
+  so a recovery is one `mv` away. Other Claude Code state under
+  `~/.claude/` (settings, conversation history, caches) is untouched.
 - **Frontmatter parsing is regex-based**, not a full YAML parser. Stick to
   one-key-per-line `key: value` — no nested objects or multi-line strings.
 

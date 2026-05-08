@@ -464,6 +464,59 @@ def cmd_wipe() -> None:
     print(green("✓ Recreated empty MEMORY.md."))
 
 
+def cmd_nuke() -> None:
+    dirs = _list_existing_memory_dirs()
+    print()
+    print(red(bold("☢  NUKE — wipe memory across EVERY Claude Code project")))
+    print(dim("    Resets you to a 'fresh Claude' state for memory specifically."))
+    print(dim("    Other Claude Code state under ~/.claude/ (settings, history, etc) is untouched."))
+    print()
+    if not dirs:
+        print(yellow("  No memory dirs found anywhere — nothing to nuke."))
+        return
+
+    total = sum(d["count"] for d in dirs)
+    print(f"  Projects affected : {bold(str(len(dirs)))}")
+    print(f"  Total entries     : {bold(str(total))}")
+    print(f"  Will affect:")
+    for d in dirs:
+        ts = datetime.fromtimestamp(d["mtime"]).strftime("%Y-%m-%d")
+        print(f"    {dim('-')} {d['encoded']:<45}  {d['count']:>3} entries  ·  {dim(ts)}")
+    print()
+    print(red(bold("  ⚠  THIS CANNOT BE UNDONE without restoring from the backup option below.")))
+    confirm_phrase = "NUKE ALL"
+    print(f"  To confirm, type: {bold(confirm_phrase)}")
+    typed = input(red("→ Confirm (or blank to cancel): ")).strip()
+    if typed != confirm_phrase:
+        print(yellow(f"✗ Cancelled (didn't type {confirm_phrase!r})."))
+        return
+
+    backup_choice = input(
+        cyan("→ Move each memory dir to a timestamped backup first? (Y/n): ")
+    ).strip().lower()
+
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if backup_choice in ("", "y"):
+        for d in dirs:
+            backup_path = d["path"].parent / f"memory.bak.{ts}"
+            shutil.move(str(d["path"]), str(backup_path))
+            d["path"].mkdir(parents=True, exist_ok=True)
+            (d["path"] / "MEMORY.md").write_text("# Memory Index\n")
+        print(green(f"✓ Backed up {len(dirs)} memory dirs to memory.bak.{ts}/ inside each project."))
+    else:
+        wiped = 0
+        for d in dirs:
+            for f in d["path"].glob("*.md"):
+                f.unlink()
+                wiped += 1
+            (d["path"] / "MEMORY.md").write_text("# Memory Index\n")
+        print(green(f"✓ Wiped {wiped} memory files across {len(dirs)} projects (no backup)."))
+
+    print()
+    print(yellow("  All memory dirs are now empty. The currently-loaded dir was reset too;"))
+    print(yellow("  the menu will show 0 entries until you add new ones."))
+
+
 def cmd_stats(entries: list[dict]) -> None:
     grouped = group_by_type(entries)
     print()
@@ -565,6 +618,7 @@ def render_menu() -> None:
         ]),
         (red,    "DANGER ZONE", [
             ("w", wipe_label),
+            ("n", "Nuke ALL Claude memory (every project, system-wide)"),
         ]),
     ]
     for color, header, items in sections:
@@ -725,6 +779,8 @@ def main() -> int:
             cmd_stats(entries)
         elif choice == "w":
             cmd_wipe()
+        elif choice == "n":
+            cmd_nuke()
         else:
             print(red("✗ Unknown choice."))
 
