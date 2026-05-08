@@ -30,16 +30,19 @@ reorganize that memory** — without leaving the terminal.
 
 ## ✨ Features
 
-| | |
-|---|---|
-| 📋 **List** | Entries grouped by type, color-coded |
-| 👁 &nbsp;**View** | Render a single entry as a card |
-| ✏️ &nbsp;**Edit** | Open in your OS's default app |
-| ➕ **Add** | Guided new-entry flow with a frontmatter template |
-| 🗑 &nbsp;**Delete** | With confirmation, auto-strips the index line |
-| 🔎 **Search** | Substring match across filename + name + description + body |
-| 🔧 **Rebuild** | Regenerate `MEMORY.md` from frontmatter |
-| 📊 **Stats** | Counts per type, orphan / missing index refs, recent edits |
+The menu groups commands by intent — **READ**, **MODIFY**, **MAINTAIN**, **DANGER ZONE**.
+
+| Section | Command | Description |
+|---|---|---|
+| READ | `[1]` List | Entries grouped by type, color-coded |
+| READ | `[2]` View | Render a single entry as a card |
+| READ | `[3]` Search | Substring match across filename + name + description + body |
+| MODIFY | `[4]` Add | Guided new-entry flow with a frontmatter template |
+| MODIFY | `[5]` Edit | Open in your OS's default app |
+| MODIFY | `[6]` Delete | With confirmation, auto-strips the index line |
+| MAINTAIN | `[7]` Rebuild | Regenerate `MEMORY.md` from frontmatter |
+| MAINTAIN | `[8]` Stats | Counts per type, orphan / missing index refs, recent edits |
+| DANGER ZONE | `[w]` Wipe | Destroy ALL memory (typed-confirm + optional timestamped backup) |
 
 ## 🚀 Quickstart
 
@@ -62,19 +65,29 @@ cd claude-memory-observe
 ## 📺 What it looks like
 
 ```
-╔══════════════════════════════════════════════════════════╗
-║         Claude Memory Observer — Bonfire workspace       ║
-╠══════════════════════════════════════════════════════════╣
-║  [1]  📋  List all (grouped by type)                     ║
-║  [2]  👁   View entry                                     ║
-║  [3]  ✏️   Edit entry                                     ║
-║  [4]  🗑   Delete entry                                   ║
-║  [5]  ➕  Add new entry                                   ║
-║  [6]  🔎  Search                                          ║
-║  [7]  🔧  Rebuild MEMORY.md                              ║
-║  [8]  📊  Stats / index sanity                           ║
-║  [q]  🚪  Quit                                           ║
-╚══════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════════╗
+║                       Claude Memory Observer                       ║
+║             -Users-me-code-myproject  ·  46 entries                ║
+╠════════════════════════════════════════════════════════════════════╣
+║  READ                                                              ║
+║     [1]  List all (grouped by type)                                ║
+║     [2]  View entry                                                ║
+║     [3]  Search                                                    ║
+║                                                                    ║
+║  MODIFY                                                            ║
+║     [4]  Add new entry                                             ║
+║     [5]  Edit entry                                                ║
+║     [6]  Delete entry                                              ║
+║                                                                    ║
+║  MAINTAIN                                                          ║
+║     [7]  Rebuild MEMORY.md                                         ║
+║     [8]  Stats / index sanity                                      ║
+║                                                                    ║
+║  DANGER ZONE                                                       ║
+║     [w]  Wipe ALL memory                                           ║
+║                                                                    ║
+║     [q]  Quit                                                      ║
+╚════════════════════════════════════════════════════════════════════╝
 → Choose:
 ```
 
@@ -139,6 +152,11 @@ The index (`MEMORY.md`) is generated from these. **Rebuilding overwrites it.**
 - **"Rebuild MEMORY.md" is destructive.** Manual sub-groupings, custom
   ordering inside groups, and any free-form notes you wrote in the index
   will be lost. The script warns first and asks for confirmation.
+- **"Wipe" is _very_ destructive.** It deletes every entry. To prevent
+  accidental triggering it asks you to type the project key (e.g.
+  `-Users-me-code-myproject`) — a y/N prompt would be too easy. By default
+  it offers to move the existing memory dir to a timestamped backup
+  (`memory.bak.<YYYYMMDD-HHMMSS>/`) before recreating an empty one.
 - **Frontmatter parsing is regex-based**, not a full YAML parser. Stick to
   one-key-per-line `key: value` — no nested objects or multi-line strings.
 

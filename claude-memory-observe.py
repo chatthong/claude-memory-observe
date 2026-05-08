@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -49,6 +50,25 @@ ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 
 def visible_len(s: str) -> int:
     return len(ANSI_RE.sub("", s))
+
+
+def display_width(s: str) -> int:
+    """Approximate terminal display columns. Strips ANSI; treats supplementary-plane
+    emojis as 2 cols, drops variation selectors / ZWJ / combining marks. Good enough
+    for menu alignment without pulling in wcwidth as a dependency."""
+    s = ANSI_RE.sub("", s)
+    w = 0
+    for ch in s:
+        cp = ord(ch)
+        if cp in (0xFE0F, 0x200D) or unicodedata.combining(ch):
+            continue
+        if 0x1F300 <= cp <= 0x1FAFF:
+            w += 2
+        elif unicodedata.east_asian_width(ch) in ("W", "F"):
+            w += 2
+        else:
+            w += 1
+    return w
 
 
 def c(code: str, s: str) -> str:
@@ -401,6 +421,48 @@ def cmd_rebuild(entries: list[dict]) -> None:
     print(green(f"✓ Rebuilt {INDEX_FILE.name} with {len(entries)} entries."))
 
 
+def cmd_wipe() -> None:
+    entries = load_all()
+    print()
+    print(red(bold("🔥  Wipe ALL memory")))
+    print()
+    print(f"  Target dir : {bold(str(MEMORY_DIR))}")
+    print(f"  Entries    : {bold(str(len(entries)))} files")
+    if entries:
+        print(f"  Includes   :")
+        for e in entries[:5]:
+            print(f"    {dim('-')} {e['file']}")
+        if len(entries) > 5:
+            print(dim(f"    ... and {len(entries) - 5} more"))
+    if INDEX_FILE.exists():
+        print(f"  Index file : {INDEX_FILE.name} ({INDEX_FILE.stat().st_size} bytes)")
+    print()
+    print(red(bold("  ⚠  THIS CANNOT BE UNDONE.")))
+    project_key = MEMORY_DIR.parent.name
+    print(f"  To confirm, type the project key exactly: {bold(project_key)}")
+    typed = input(red("→ Confirm (or blank to cancel): ")).strip()
+    if typed != project_key:
+        print(yellow("✗ Cancelled (project key didn't match)."))
+        return
+
+    backup_choice = input(cyan("→ Move current memory to a timestamped backup first? (Y/n): ")).strip().lower()
+    if backup_choice in ("", "y"):
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup_dir = MEMORY_DIR.parent / f"memory.bak.{ts}"
+        shutil.move(str(MEMORY_DIR), str(backup_dir))
+        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        print(green(f"✓ Backed up to: {backup_dir}"))
+    else:
+        deleted = 0
+        for f in MEMORY_DIR.glob("*.md"):
+            f.unlink()
+            deleted += 1
+        print(green(f"✓ Deleted {deleted} files (no backup)."))
+
+    INDEX_FILE.write_text("# Memory Index\n")
+    print(green("✓ Recreated empty MEMORY.md."))
+
+
 def cmd_stats(entries: list[dict]) -> None:
     grouped = group_by_type(entries)
     print()
@@ -450,29 +512,58 @@ def cmd_stats(entries: list[dict]) -> None:
 
 
 def render_menu() -> None:
-    width = 60
+    width = min(term_width() - 2, 70)
+    inner = width - 2
+
+    # Subtitle: encoded project key + entry count
+    encoded = MEMORY_DIR.parent.name
+    try:
+        n_entries = sum(1 for f in MEMORY_DIR.glob("*.md") if f.name != "MEMORY.md")
+    except OSError:
+        n_entries = 0
+    subtitle_plain = f"{encoded}  ·  {n_entries} entries"
+    if display_width(subtitle_plain) > inner - 4:
+        suffix = f"…  ·  {n_entries} entries"
+        max_enc = inner - 4 - display_width(suffix)
+        if max_enc > 5:
+            encoded = encoded[: max_enc] + "…"
+            subtitle_plain = f"{encoded}  ·  {n_entries} entries"
+        else:
+            subtitle_plain = f"{n_entries} entries"
+
     print()
-    print(blue("╔" + "═" * (width - 2) + "╗"))
-    title = " Claude Memory Observer "
-    print(blue("║") + bold(title.center(width - 2)) + blue("║"))
-    print(blue("╠" + "═" * (width - 2) + "╣"))
-    items = [
-        ("1", "📋", "List all (grouped by type)"),
-        ("2", "👁 ", "View entry"),
-        ("3", "✏️ ", "Edit entry"),
-        ("4", "🗑 ", "Delete entry"),
-        ("5", "➕", "Add new entry"),
-        ("6", "🔎", "Search"),
-        ("7", "🔧", "Rebuild MEMORY.md"),
-        ("8", "📊", "Stats / index sanity"),
-        ("q", "🚪", "Quit"),
+    print(blue("╔" + "═" * inner + "╗"))
+    _box_print(bold("Claude Memory Observer".center(inner)), inner)
+    _box_print(dim(subtitle_plain.center(inner)), inner)
+    print(blue("╠" + "═" * inner + "╣"))
+
+    sections = [
+        (cyan,   "READ", [
+            ("1", "List all (grouped by type)"),
+            ("2", "View entry"),
+            ("3", "Search"),
+        ]),
+        (green,  "MODIFY", [
+            ("4", "Add new entry"),
+            ("5", "Edit entry"),
+            ("6", "Delete entry"),
+        ]),
+        (yellow, "MAINTAIN", [
+            ("7", "Rebuild MEMORY.md"),
+            ("8", "Stats / index sanity"),
+        ]),
+        (red,    "DANGER ZONE", [
+            ("w", "Wipe ALL memory"),
+        ]),
     ]
-    for key, icon, label in items:
-        raw = f"  [{key}]  {icon}  {label}"
-        line = f"  {bold(f'[{key}]')}  {icon}  {label}"
-        pad = width - 2 - len(raw)
-        print(blue("║") + line + " " * max(0, pad) + blue("║"))
-    print(blue("╚" + "═" * (width - 2) + "╝"))
+    for color, header, items in sections:
+        _box_print("  " + color(bold(header)), inner)
+        for key, label in items:
+            _box_print(f"     {bold(f'[{key}]')}  {label}", inner)
+        _box_print("", inner)
+
+    _box_print(f"     {bold('[q]')}  Quit", inner)
+    print(blue("╚" + "═" * inner + "╝"))
 
 
 def _list_existing_memory_dirs() -> list[dict]:
@@ -505,8 +596,8 @@ def _list_existing_memory_dirs() -> list[dict]:
 
 
 def _box_print(content: str, inner_w: int) -> None:
-    """Print one line inside the blue box; pad based on visible (non-ANSI) length."""
-    pad = inner_w - visible_len(content)
+    """Print one line inside the blue box; pad based on display width (handles emoji)."""
+    pad = inner_w - display_width(content)
     print(blue("║") + content + " " * max(0, pad) + blue("║"))
 
 
@@ -621,6 +712,8 @@ def main() -> int:
             cmd_rebuild(entries)
         elif choice == "8":
             cmd_stats(entries)
+        elif choice == "w":
+            cmd_wipe()
         else:
             print(red("✗ Unknown choice."))
 
