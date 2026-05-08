@@ -525,6 +525,10 @@ def render_no_memory_screen(missing: Path) -> Path | None:
     print(blue("╠" + "═" * inner + "╣"))
 
     _box_print("", inner)
+    _box_print("  " + yellow("💡 Tip:") + "  Launch this from inside your Claude Code project dir so it", inner)
+    _box_print("          auto-detects that project's memory. The picker below is a fallback.", inner)
+    _box_print("          " + dim("Example: cd ~/code/myproject && ./claude-memory-observe.py"), inner)
+    _box_print("", inner)
     _box_print("  " + bold("Looked at:"), inner)
     missing_str = str(missing)
     if len(missing_str) > inner - 6:
@@ -553,6 +557,7 @@ def render_no_memory_screen(missing: Path) -> Path | None:
                 name_str = name_str[: avail - 1] + "…"
             line = f"    {num}  {cyan(name_str)}  {sep}  {count_s}  {sep}  {dim(ts)}"
             _box_print(line, inner)
+        _box_print(f"    {bold('[ x]')}  {dim('Exit')}", inner)
         _box_print("", inner)
 
     _box_print("  " + bold("Or override explicitly:"), inner)
@@ -568,8 +573,8 @@ def render_no_memory_screen(missing: Path) -> Path | None:
         print()
         return None
 
-    raw = input(cyan("→ Pick a memory dir to use, or blank to exit: ")).strip()
-    if not raw:
+    raw = input(cyan("→ Pick: ")).strip().lower()
+    if not raw or raw == "x":
         print(green("✓ Bye."))
         return None
     if not raw.isdigit():
