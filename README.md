@@ -30,20 +30,40 @@ reorganize that memory** — without leaving the terminal.
 
 ## ✨ Features
 
-The menu groups commands by intent — **READ**, **MODIFY**, **MAINTAIN**, **DANGER ZONE**.
+Commands are grouped into four sections in the menu:
 
-| Section | Command | Description |
+#### 📖 &nbsp;Read
+
+|   | Command | What it does |
 |---|---|---|
-| READ | `[1]` List | Entries grouped by type, color-coded |
-| READ | `[2]` View | Render a single entry as a card |
-| READ | `[3]` Search | Substring match across filename + name + description + body |
-| MODIFY | `[4]` Add | Guided new-entry flow with a frontmatter template |
-| MODIFY | `[5]` Edit | Open in your OS's default app |
-| MODIFY | `[6]` Delete | With confirmation, auto-strips the index line |
-| MAINTAIN | `[7]` Rebuild | Regenerate `MEMORY.md` from frontmatter |
-| MAINTAIN | `[8]` Stats | Counts per type, orphan / missing index refs, recent edits |
-| DANGER ZONE | `[w]` Wipe | Destroy the **currently-selected** memory dir only (typed-confirm + optional timestamped backup). Other projects' memory dirs are untouched. |
-| DANGER ZONE | `[n]` Nuke | Wipe memory **across every Claude Code project** on this machine (typed `NUKE ALL` confirm + optional per-project timestamped backup). Resets you to a 'fresh Claude' state for memory specifically. Other Claude Code state under `~/.claude/` is untouched. |
+| `[1]` | **List** | Entries grouped by type, color-coded |
+| `[2]` | **View** | Render a single entry as a card |
+| `[3]` | **Search** | Substring match across filename + name + description + body |
+
+#### ✏️ &nbsp;Modify
+
+|   | Command | What it does |
+|---|---|---|
+| `[4]` | **Add** | Guided new-entry flow with a frontmatter template |
+| `[5]` | **Edit** | Open in your OS's default app |
+| `[6]` | **Delete** | With confirmation, auto-strips the index line |
+
+#### 🔧 &nbsp;Maintain
+
+|   | Command | What it does |
+|---|---|---|
+| `[7]` | **Rebuild** | Regenerate `MEMORY.md` from frontmatter |
+| `[8]` | **Stats** | Counts per type, orphan / missing index refs, recent edits |
+
+#### 🔥 &nbsp;Danger zone
+
+|   | Command | What it does |
+|---|---|---|
+| `[w]` | **Wipe** | Wipe the **currently-selected** project's memory only |
+| `[n]` | **Nuke** | Wipe memory across **every** Claude Code project on this machine |
+
+> Both Wipe and Nuke require typed confirmation and offer a timestamped
+> backup by default. See [Caveats](#%EF%B8%8F-caveats) for the full safety design.
 
 ## 🚀 Quickstart
 
