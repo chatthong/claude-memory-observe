@@ -91,69 +91,72 @@ cd ~/code/your-claude-project
 claude-memory-observe
 ```
 
-## 🆕 First run
+## 🆕 First run — pick a memory store
 
-If you launch the script from a directory that has no Claude memory yet
-(e.g. a brand-new project, or just from your home dir), you get a friendly
-picker that surfaces every memory dir already on your machine and lets you
-hop into one — or exit cleanly:
+Every launch starts with a picker that confirms which project's memory you
+want to operate on. The cwd-detected dir is option `[1]` and is the
+**default** (just press Enter); other discovered dirs are listed below;
+`[x]` exits. This makes it explicit which memory you're about to edit and
+lets you hop between projects without restarting.
 
 ```
-╔══════════════════════════════════════════════════════════════════════════════════════════╗
-║                           ✗  No Claude memory directory found                            ║
-╠══════════════════════════════════════════════════════════════════════════════════════════╣
-║                                                                                          ║
-║  💡 Tip:  Launch this from inside your Claude Code project dir so it                     ║
-║          auto-detects that project's memory. The picker below is a fallback.             ║
-║          Example: cd ~/code/myproject && ./claude-memory-observe.py                      ║
-║                                                                                          ║
-║  Looked at:                                                                              ║
-║    /Users/me/.claude/projects/-Users-me-Desktop/memory                                   ║
-║                                                                                          ║
-║  Why:                                                                                    ║
-║    Claude Code keys auto-memory by the directory it was launched from.                   ║
-║    The current working dir doesn't have a memory store yet.                              ║
-║                                                                                          ║
-║  Existing memory dirs on this machine:                                                   ║
-║    [ 1]  -Users-me-code-myproject       42 entries  ·  2026-05-08                        ║
-║    [ 2]  -Users-me-code-otherproject     5 entries  ·  2026-04-12                        ║
-║    [ x]  Exit                                                                            ║
-║                                                                                          ║
-║  Or override explicitly:                                                                 ║
-║    ./claude-memory-observe.py --memory-dir <path>                                        ║
-║    CLAUDE_MEMORY_DIR=<path> ./claude-memory-observe.py                                   ║
-║                                                                                          ║
-╚══════════════════════════════════════════════════════════════════════════════════════════╝
-→ Pick:
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                                Claude Memory Observer                                ║
+║                                Select a memory store                                 ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                      ║
+║  💡 Tip:  Run from inside your Claude Code project dir so the                        ║
+║          cwd-detected memory shows up as the default option below.                   ║
+║                                                                                      ║
+║  Detected for current working dir:                                                   ║
+║     [1]  -Users-me-code-myproject  ·  46 entries  ·  2026-05-08   ← default          ║
+║                                                                                      ║
+║  Other memory dirs on this machine:                                                  ║
+║     [2]  -Users-me  ·  2 entries  ·  2026-05-02                                      ║
+║     [3]  -Users-me-code-otherproject  ·  5 entries  ·  2026-04-12                    ║
+║                                                                                      ║
+║     [x]  Exit                                                                        ║
+║                                                                                      ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+→ Pick (Enter for default):
 ```
+
+If the cwd-detected dir doesn't exist yet (brand-new project, or you ran
+from a non-Claude dir), the same screen appears with the default slot
+showing `(empty / not found — pick from list below or Exit)`.
+
+**Skipping the picker:** if you pass `--memory-dir` or set
+`$CLAUDE_MEMORY_DIR`, the picker is skipped — explicit overrides are
+treated as "I know what I want" and the script jumps straight to the
+main menu.
 
 ## 📺 Main menu
 
 ```
-╔════════════════════════════════════════════════════════════════════╗
-║                       Claude Memory Observer                       ║
-║             -Users-me-code-myproject  ·  46 entries                ║
-╠════════════════════════════════════════════════════════════════════╣
-║  READ                                                              ║
-║     [1]  List all (grouped by type)                                ║
-║     [2]  View entry                                                ║
-║     [3]  Search                                                    ║
-║                                                                    ║
-║  MODIFY                                                            ║
-║     [4]  Add new entry                                             ║
-║     [5]  Edit entry                                                ║
-║     [6]  Delete entry                                              ║
-║                                                                    ║
-║  MAINTAIN                                                          ║
-║     [7]  Rebuild MEMORY.md                                         ║
-║     [8]  Stats / index sanity                                      ║
-║                                                                    ║
-║  DANGER ZONE                                                       ║
-║     [w]  Wipe memory (-Users-me-code-myproject)                    ║
-║     [n]  Nuke ALL Claude memory (every project, system-wide)       ║
-║                                                                    ║
-║     [q]  Quit                                                      ║
-╚════════════════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                                Claude Memory Observer                                ║
+║                      -Users-me-code-myproject  ·  46 entries                         ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║  READ                                                                                ║
+║     [1]  List all (grouped by type)                                                  ║
+║     [2]  View entry                                                                  ║
+║     [3]  Search                                                                      ║
+║                                                                                      ║
+║  MODIFY                                                                              ║
+║     [4]  Add new entry                                                               ║
+║     [5]  Edit entry                                                                  ║
+║     [6]  Delete entry                                                                ║
+║                                                                                      ║
+║  MAINTAIN                                                                            ║
+║     [7]  Rebuild MEMORY.md                                                           ║
+║     [8]  Stats / index sanity                                                        ║
+║                                                                                      ║
+║  DANGER ZONE                                                                         ║
+║     [w]  Wipe memory (-Users-me-code-myproject)                                      ║
+║     [n]  Nuke ALL Claude memory (every project, system-wide)                         ║
+║                                                                                      ║
+║     [q]  Quit                                                                        ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
 → Choose:
 ```
 

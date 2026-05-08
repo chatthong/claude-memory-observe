@@ -16,22 +16,24 @@ def _encode_cwd(cwd: Path | None = None) -> str:
     return str(p).replace("/", "-")
 
 
-def _resolve_memory_dir() -> Path:
-    # Precedence: --memory-dir flag > $CLAUDE_MEMORY_DIR > default by cwd
+def _resolve_memory_dir() -> tuple[Path, bool]:
+    """Returns (path, was_overridden). Override = user passed --memory-dir
+    or set $CLAUDE_MEMORY_DIR. Otherwise the path is derived from cwd."""
     if "--memory-dir" in sys.argv:
         i = sys.argv.index("--memory-dir")
         if i + 1 < len(sys.argv):
-            return Path(sys.argv[i + 1]).expanduser().resolve()
+            return Path(sys.argv[i + 1]).expanduser().resolve(), True
     env = os.environ.get("CLAUDE_MEMORY_DIR")
     if env:
-        return Path(env).expanduser().resolve()
-    return Path.home() / ".claude" / "projects" / _encode_cwd() / "memory"
+        return Path(env).expanduser().resolve(), True
+    return Path.home() / ".claude" / "projects" / _encode_cwd() / "memory", False
 
 
-MEMORY_DIR = _resolve_memory_dir()
+MEMORY_DIR, MEMORY_DIR_OVERRIDDEN = _resolve_memory_dir()
 INDEX_FILE = MEMORY_DIR / "MEMORY.md"
 TYPES = ["user", "feedback", "project", "reference"]
 EDITOR = os.environ.get("EDITOR", "vim")
+UI_WIDTH = 88
 
 USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -566,7 +568,7 @@ def cmd_stats(entries: list[dict]) -> None:
 
 
 def render_menu() -> None:
-    width = min(term_width() - 2, 70)
+    width = min(term_width() - 2, UI_WIDTH)
     inner = width - 2
 
     # Subtitle: encoded project key + entry count
@@ -666,89 +668,127 @@ def _box_print(content: str, inner_w: int) -> None:
     print(blue("║") + content + " " * max(0, pad) + blue("║"))
 
 
-def render_no_memory_screen(missing: Path) -> Path | None:
-    """Boxed error screen with a picker for existing memory dirs.
-
-    Returns the chosen Path, or None to exit.
-    """
-    width = min(term_width() - 2, 92)
+def render_launcher_screen(default_path: Path) -> Path | None:
+    """Always-on launcher: lets the user confirm the cwd-detected memory dir
+    or hop to a different one. Returns chosen Path, or None to exit."""
+    width = min(term_width() - 2, UI_WIDTH)
     inner = width - 2
+
+    all_dirs = _list_existing_memory_dirs()
+    default_entry: dict | None = None
+    other_entries: list[dict] = []
+    for d in all_dirs:
+        if d["path"] == default_path:
+            default_entry = d
+        else:
+            other_entries.append(d)
 
     print()
     print(blue("╔" + "═" * inner + "╗"))
-    title = "✗  No Claude memory directory found"
-    _box_print(red(bold(title.center(inner))), inner)
+    _box_print(bold("Claude Memory Observer".center(inner)), inner)
+    _box_print(dim("Select a memory store".center(inner)), inner)
     print(blue("╠" + "═" * inner + "╣"))
 
     _box_print("", inner)
-    _box_print("  " + yellow("💡 Tip:") + "  Launch this from inside your Claude Code project dir so it", inner)
-    _box_print("          auto-detects that project's memory. The picker below is a fallback.", inner)
-    _box_print("          " + dim("Example: cd ~/code/myproject && ./claude-memory-observe.py"), inner)
-    _box_print("", inner)
-    _box_print("  " + bold("Looked at:"), inner)
-    missing_str = str(missing)
-    if len(missing_str) > inner - 6:
-        missing_str = "…" + missing_str[-(inner - 7):]
-    _box_print("    " + dim(missing_str), inner)
+    _box_print("  " + yellow("💡 Tip:") + "  Run from inside your Claude Code project dir so the", inner)
+    _box_print("          cwd-detected memory shows up as the default option below.", inner)
     _box_print("", inner)
 
-    _box_print("  " + bold("Why:"), inner)
-    _box_print("    Claude Code keys auto-memory by the directory it was launched from.", inner)
-    _box_print("    The current working dir doesn't have a memory store yet.", inner)
-    _box_print("", inner)
+    options: list[tuple[int, Path]] = []
+    idx = 1
 
-    existing = _list_existing_memory_dirs()
-    if existing:
-        _box_print("  " + bold("Existing memory dirs on this machine:"), inner)
-        for i, d in enumerate(existing, 1):
-            ts = datetime.fromtimestamp(d["mtime"]).strftime("%Y-%m-%d")
-            num = bold(f"[{i:>2}]")
-            count_s = green(f"{d['count']:>3} entries")
-            sep = dim("·")
-            # Cap encoded name to fit in inner width.
-            base_overhead_visible = visible_len(f"    [{i:>2}]    ·    {d['count']:>3} entries  ·  {ts}")
-            avail = inner - base_overhead_visible - 2
-            name_str = d["encoded"]
-            if len(name_str) > avail and avail > 5:
-                name_str = name_str[: avail - 1] + "…"
-            line = f"    {num}  {cyan(name_str)}  {sep}  {count_s}  {sep}  {dim(ts)}"
-            _box_print(line, inner)
-        _box_print(f"    {bold('[ x]')}  {dim('Exit')}", inner)
+    # Section: detected (cwd-derived) default
+    if default_entry:
+        _box_print("  " + bold("Detected for current working dir:"), inner)
+        ts = datetime.fromtimestamp(default_entry["mtime"]).strftime("%Y-%m-%d")
+        marker = green(bold("← default"))
+        encoded = default_entry["encoded"]
+        count = default_entry["count"]
+        line = (
+            f"     {bold(f'[{idx}]')}  {cyan(encoded)}  "
+            f"{dim('·')}  {green(f'{count} entries')}  "
+            f"{dim('·')}  {dim(ts)}   {marker}"
+        )
+        _box_print(line, inner)
+        options.append((idx, default_entry["path"]))
+        idx += 1
+        _box_print("", inner)
+    else:
+        _box_print("  " + bold("Detected for current working dir:"), inner)
+        cwd_str = str(default_path)
+        if len(cwd_str) > inner - 8:
+            cwd_str = "…" + cwd_str[-(inner - 9):]
+        _box_print(f"     {dim(cwd_str)}", inner)
+        _box_print(f"     {yellow('(empty / not found — pick from list below or Exit)')}", inner)
         _box_print("", inner)
 
-    _box_print("  " + bold("Or override explicitly:"), inner)
-    _box_print("    " + dim("./claude-memory-observe.py --memory-dir <path>"), inner)
-    _box_print("    " + dim("CLAUDE_MEMORY_DIR=<path> ./claude-memory-observe.py"), inner)
-    _box_print("", inner)
+    # Section: other dirs
+    if other_entries:
+        section_label = "Other memory dirs on this machine:" if default_entry else "Memory dirs on this machine:"
+        _box_print("  " + bold(section_label), inner)
+        for d in other_entries:
+            ts = datetime.fromtimestamp(d["mtime"]).strftime("%Y-%m-%d")
+            encoded = d["encoded"]
+            count = d["count"]
+            line = (
+                f"     {bold(f'[{idx}]')}  {cyan(encoded)}  "
+                f"{dim('·')}  {green(f'{count} entries')}  "
+                f"{dim('·')}  {dim(ts)}"
+            )
+            _box_print(line, inner)
+            options.append((idx, d["path"]))
+            idx += 1
+        _box_print("", inner)
 
+    if not options:
+        _box_print("  " + yellow("No Claude memory dirs found anywhere on this machine."), inner)
+        _box_print("  " + dim("Override with --memory-dir <path> or $CLAUDE_MEMORY_DIR."), inner)
+        _box_print("", inner)
+
+    _box_print(f"     {bold('[x]')}  Exit", inner)
+    _box_print("", inner)
     print(blue("╚" + "═" * inner + "╝"))
     print()
 
-    if not existing:
-        print(yellow("  No existing memory dirs to pick from. Exiting."))
-        print()
+    if not options:
         return None
 
-    raw = input(cyan("→ Pick: ")).strip().lower()
-    if not raw or raw == "x":
+    prompt = "→ Pick"
+    if default_entry:
+        prompt += " (Enter for default)"
+    prompt += ": "
+    raw = input(cyan(prompt)).strip().lower()
+
+    if raw == "" and default_entry:
+        return default_entry["path"]
+    if raw == "x" or raw == "":
         print(green("✓ Bye."))
         return None
     if not raw.isdigit():
         print(red("✗ Not a number — exiting."))
         return None
     n = int(raw)
-    if 1 <= n <= len(existing):
-        chosen = existing[n - 1]["path"]
-        print(green(f"✓ Using {chosen}"))
-        return chosen
+    for opt_idx, opt_path in options:
+        if opt_idx == n:
+            print(green(f"✓ Using {opt_path}"))
+            return opt_path
     print(red(f"✗ No option #{n} — exiting."))
     return None
 
 
 def main() -> int:
     global MEMORY_DIR, INDEX_FILE
-    if not MEMORY_DIR.exists():
-        chosen = render_no_memory_screen(MEMORY_DIR)
+    if MEMORY_DIR_OVERRIDDEN:
+        # User explicitly chose via --memory-dir or $CLAUDE_MEMORY_DIR.
+        # Respect their choice and skip the launcher; just bail clean if missing.
+        if not MEMORY_DIR.exists():
+            print(red(f"✗ ERROR: memory dir not found: {MEMORY_DIR}"), file=sys.stderr)
+            print(dim("  (resolved from --memory-dir or $CLAUDE_MEMORY_DIR)"), file=sys.stderr)
+            return 1
+    else:
+        # Default cwd-derived path. Always show the launcher so the user can
+        # confirm or hop to a different project's memory.
+        chosen = render_launcher_screen(MEMORY_DIR)
         if chosen is None:
             return 0
         MEMORY_DIR = chosen
