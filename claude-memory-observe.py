@@ -1,0 +1,517 @@
+#!/usr/bin/env python3
+"""Interactive Claude Code auto-memory manager for the Bonfire workspace."""
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+def _encode_cwd(cwd: Path | None = None) -> str:
+    """Mirror Claude Code's auto-memory key: absolute path with / -> -"""
+    p = (cwd or Path.cwd()).resolve()
+    return str(p).replace("/", "-")
+
+
+def _resolve_memory_dir() -> Path:
+    # Precedence: --memory-dir flag > $CLAUDE_MEMORY_DIR > default by cwd
+    if "--memory-dir" in sys.argv:
+        i = sys.argv.index("--memory-dir")
+        if i + 1 < len(sys.argv):
+            return Path(sys.argv[i + 1]).expanduser().resolve()
+    env = os.environ.get("CLAUDE_MEMORY_DIR")
+    if env:
+        return Path(env).expanduser().resolve()
+    return Path.home() / ".claude" / "projects" / _encode_cwd() / "memory"
+
+
+MEMORY_DIR = _resolve_memory_dir()
+INDEX_FILE = MEMORY_DIR / "MEMORY.md"
+TYPES = ["user", "feedback", "project", "reference"]
+EDITOR = os.environ.get("EDITOR", "vim")
+
+USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def open_in_default_app(path: Path) -> None:
+    """Open file in the OS default app (TextEdit on macOS, etc.)."""
+    if sys.platform == "darwin":
+        subprocess.call(["open", str(path)])
+    elif sys.platform == "win32":
+        os.startfile(str(path))
+    else:
+        subprocess.call(["xdg-open", str(path)])
+
+ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def visible_len(s: str) -> int:
+    return len(ANSI_RE.sub("", s))
+
+
+def c(code: str, s: str) -> str:
+    if not USE_COLOR:
+        return s
+    return f"\033[{code}m{s}\033[0m"
+
+
+def bold(s):    return c("1", s)
+def dim(s):     return c("2", s)
+def red(s):     return c("31", s)
+def green(s):   return c("32", s)
+def yellow(s):  return c("33", s)
+def blue(s):    return c("34", s)
+def magenta(s): return c("35", s)
+def cyan(s):    return c("36", s)
+
+
+TYPE_META = {
+    "user":      ("👤", cyan,    "USER"),
+    "feedback":  ("💬", yellow,  "FEEDBACK"),
+    "project":   ("📁", green,   "PROJECT"),
+    "reference": ("📚", magenta, "REFERENCE"),
+    "?":         ("❓", red,     "UNKNOWN"),
+}
+
+
+def term_width() -> int:
+    try:
+        return shutil.get_terminal_size((100, 20)).columns
+    except Exception:
+        return 100
+
+
+def truncate(s: str, n: int) -> str:
+    s = s.replace("\n", " ").strip()
+    if len(s) <= n:
+        return s
+    return s[: max(1, n - 1)] + "…"
+
+
+def parse_frontmatter(path: Path) -> dict:
+    try:
+        text = path.read_text()
+    except Exception as e:
+        return {"_error": str(e)}
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", text, re.DOTALL)
+    if not m:
+        return {"_no_frontmatter": True, "_body": text}
+    fm_text, body = m.group(1), m.group(2)
+    fm = {}
+    for line in fm_text.splitlines():
+        kv = re.match(r"^([\w-]+):\s*(.*)$", line)
+        if kv:
+            fm[kv.group(1).strip()] = kv.group(2).strip()
+    fm["_body"] = body
+    return fm
+
+
+def load_all() -> list[dict]:
+    entries = []
+    if not MEMORY_DIR.exists():
+        return entries
+    for f in sorted(MEMORY_DIR.glob("*.md")):
+        if f.name == "MEMORY.md":
+            continue
+        fm = parse_frontmatter(f)
+        entries.append({
+            "file": f.name,
+            "path": f,
+            "name": fm.get("name", "(no name)"),
+            "description": fm.get("description", "(no description)"),
+            "type": fm.get("type", "?").lower(),
+            "_fm": fm,
+        })
+    return entries
+
+
+def group_by_type(entries: list[dict]) -> dict:
+    grouped = {t: [] for t in list(TYPE_META.keys())}
+    for e in entries:
+        t = e["type"] if e["type"] in grouped else "?"
+        grouped[t].append(e)
+    return grouped
+
+
+def render_table(rows: list[tuple], widths: tuple, header: tuple, color_fn=None) -> None:
+    """Render an aligned table with Unicode borders."""
+    top = "┌" + "┬".join("─" * (w + 2) for w in widths) + "┐"
+    mid = "├" + "┼".join("─" * (w + 2) for w in widths) + "┤"
+    bot = "└" + "┴".join("─" * (w + 2) for w in widths) + "┘"
+
+    def fmt_row(cells, paint=None):
+        parts = []
+        for cell, w in zip(cells, widths):
+            text = truncate(str(cell), w)
+            padded = text + " " * (w - len(text))
+            if paint:
+                padded = paint(padded)
+            parts.append(" " + padded + " ")
+        return dim("│") + dim("│").join(parts) + dim("│")
+
+    print(dim(top))
+    print(fmt_row(header, paint=bold))
+    print(dim(mid))
+    for r in rows:
+        print(fmt_row(r, paint=color_fn))
+    print(dim(bot))
+
+
+def cmd_list(entries: list[dict]) -> None:
+    """Vertical card list — readable on narrow terminals, no table wrapping."""
+    grouped = group_by_type(entries)
+    width = min(term_width() - 2, 120)
+    text_w = max(40, width - 10)
+
+    idx = 1
+    print()
+    for t in TYPE_META.keys():
+        items = grouped[t]
+        if not items:
+            continue
+        emoji, color, label = TYPE_META[t]
+        print()
+        print(color(bold(f"  {emoji}  {label}  ({len(items)})")))
+        print(color("  " + "─" * (width - 4)))
+        for e in items:
+            e["_idx"] = idx
+            num = color(bold(f"[{idx:>2}]"))
+            print(f"  {num}  {bold(e['file'])}")
+            print(f"        {dim('name:')} {e['name']}")
+            print(f"        {dim('desc:')} {truncate(e['description'], text_w)}")
+            idx += 1
+        print()
+    print(dim(f"  Total: {len(entries)} entries\n"))
+
+
+def pick_entry(entries: list[dict]) -> dict | None:
+    cmd_list(entries)
+    raw = input(cyan("→ Entry # (or blank to cancel): ")).strip()
+    if not raw:
+        return None
+    if not raw.isdigit():
+        print(red("✗ Not a number."))
+        return None
+    n = int(raw)
+    for e in entries:
+        if e.get("_idx") == n:
+            return e
+    print(red(f"✗ No entry #{n}."))
+    return None
+
+
+def render_card(e: dict) -> None:
+    emoji, color, label = TYPE_META.get(e["type"], TYPE_META["?"])
+    width = min(100, term_width() - 4)
+    print()
+    print(color("╔" + "═" * (width - 2) + "╗"))
+    title = f" {emoji}  {e['name']} "
+    title_t = truncate(title, width - 2)
+    print(color("║") + bold(title_t.ljust(width - 2)) + color("║"))
+    print(color("╠" + "═" * (width - 2) + "╣"))
+    meta = f"  type: {label}    file: {e['file']}"
+    print(color("║") + truncate(meta, width - 2).ljust(width - 2) + color("║"))
+    print(color("╚" + "═" * (width - 2) + "╝"))
+    body = e["_fm"].get("_body", "").rstrip()
+    print(body)
+    print()
+
+
+def cmd_view(entries: list[dict]) -> None:
+    e = pick_entry(entries)
+    if not e:
+        return
+    render_card(e)
+
+
+def cmd_edit(entries: list[dict]) -> None:
+    e = pick_entry(entries)
+    if not e:
+        return
+    open_in_default_app(e["path"])
+    print(green(f"✓ Opened in default app: {e['file']}"))
+    input(cyan("→ Press Enter when done editing... "))
+
+
+def remove_index_lines(file_basename: str) -> int:
+    if not INDEX_FILE.exists():
+        return 0
+    lines = INDEX_FILE.read_text().splitlines(keepends=True)
+    pattern = re.compile(rf"\]\({re.escape(file_basename)}\)")
+    kept = [ln for ln in lines if not pattern.search(ln)]
+    removed = len(lines) - len(kept)
+    if removed:
+        INDEX_FILE.write_text("".join(kept))
+    return removed
+
+
+def cmd_delete(entries: list[dict]) -> None:
+    e = pick_entry(entries)
+    if not e:
+        return
+    print()
+    print(red(bold(f"⚠  About to delete: {e['file']}")))
+    print(f"   name: {e['name']}")
+    print(f"   type: {e['type']}")
+    confirm = input(red("→ Confirm delete? (y/N): ")).strip().lower()
+    if confirm != "y":
+        print(yellow("✗ Cancelled."))
+        return
+    e["path"].unlink()
+    removed = remove_index_lines(e["file"])
+    print(green(f"✓ Deleted: {e['file']} (removed {removed} index line(s))"))
+
+
+def slugify(name: str) -> str:
+    s = name.lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = s.strip("_")
+    return s or "entry"
+
+
+def cmd_add() -> None:
+    print()
+    print(green(bold("➕  Add new memory entry")))
+    print(dim(f"   Types: {', '.join(TYPES)}"))
+    t = input(cyan("→ Type: ")).strip().lower()
+    if t not in TYPES:
+        print(red(f"✗ Invalid type. Must be one of: {TYPES}"))
+        return
+    name = input(cyan("→ Name (one-line title): ")).strip()
+    if not name:
+        print(red("✗ Name required."))
+        return
+    desc = input(cyan("→ Description (one-line, used for index): ")).strip()
+    if not desc:
+        print(red("✗ Description required."))
+        return
+
+    default_filename = f"{t}_{slugify(name)}.md"
+    fname_input = input(cyan(f"→ Filename [{default_filename}]: ")).strip()
+    fname = fname_input or default_filename
+    if not fname.endswith(".md"):
+        fname += ".md"
+    target = MEMORY_DIR / fname
+    if target.exists():
+        print(red(f"✗ File already exists: {fname}"))
+        return
+
+    template = f"""---
+name: {name}
+description: {desc}
+type: {t}
+---
+
+[Body — fill in. For feedback/project, lead with the rule/fact, then **Why:** and **How to apply:** lines.]
+"""
+    target.write_text(template)
+    print(green(f"✓ Created: {fname}"))
+    open_now = input(cyan("→ Open in default app now? (Y/n): ")).strip().lower()
+    if open_now in ("", "y"):
+        open_in_default_app(target)
+        input(cyan("→ Press Enter when done editing... "))
+
+    if INDEX_FILE.exists():
+        existing = INDEX_FILE.read_text()
+        if not existing.endswith("\n"):
+            existing += "\n"
+        line = f"- [{name}]({fname}) — {desc}\n"
+        INDEX_FILE.write_text(existing + line)
+        print(green("✓ Appended to MEMORY.md index."))
+
+
+def cmd_search(entries: list[dict]) -> None:
+    q = input(cyan("→ Search keyword: ")).strip().lower()
+    if not q:
+        return
+    hits = []
+    for e in entries:
+        hay = (
+            e["file"] + " " + e["name"] + " " + e["description"] + " "
+            + (e["_fm"].get("_body") or "")
+        ).lower()
+        if q in hay:
+            hits.append(e)
+    if not hits:
+        print(yellow("∅ No matches."))
+        return
+
+    width = min(term_width() - 2, 120)
+    text_w = max(40, width - 10)
+    print()
+    print(green(bold(f"  🔎  {len(hits)} match(es) for '{q}'")))
+    print(green("  " + "─" * (width - 4)))
+    for i, e in enumerate(hits, 1):
+        e["_idx"] = i
+        emoji, color, label = TYPE_META.get(e["type"], TYPE_META["?"])
+        num = color(bold(f"[{i:>2}]"))
+        print(f"  {num}  {emoji} {color(label)}  {bold(e['file'])}")
+        print(f"        {dim('name:')} {e['name']}")
+        print(f"        {dim('desc:')} {truncate(e['description'], text_w)}")
+    print()
+    raw = input(cyan("→ View one? Entry # (or blank to skip): ")).strip()
+    if raw.isdigit():
+        n = int(raw)
+        for e in hits:
+            if e.get("_idx") == n:
+                render_card(e)
+                return
+
+
+def cmd_rebuild(entries: list[dict]) -> None:
+    print()
+    print(yellow(bold("🔧  Rebuild MEMORY.md")))
+    print()
+    print(f"  {bold('What this does:')}")
+    print(f"    1. Reads frontmatter ({dim('name:')}, {dim('description:')}, {dim('type:')}) from every .md file")
+    print(f"    2. Groups entries by type ({cyan('USER')} → {yellow('FEEDBACK')} → {green('PROJECT')} → {magenta('REFERENCE')})")
+    print(f"    3. {red('OVERWRITES')} {bold('MEMORY.md')} with a freshly generated index")
+    print()
+    print(f"  {bold('When to use:')}")
+    print(f"    • Files added/deleted outside this script → re-sync the index")
+    print(f"    • Edited a {dim('description:')} in frontmatter → reflect new text in index")
+    print(f"    • Index has drift (run option 8 first to check)")
+    print()
+    print(f"  {red(bold('What gets LOST:'))}")
+    print(f"    • Manual sub-groupings ({dim('e.g. current ## bfg-swt / ## td-rep sections')})")
+    print(f"    • Custom ordering inside groups (will be alphabetical)")
+    print(f"    • Any free-form notes/commentary you wrote in MEMORY.md")
+    print()
+    print(f"  {dim('Source of truth = each file frontmatter.  Destination = MEMORY.md.')}")
+    print()
+    confirm = input(yellow(bold("→ Proceed with rebuild? (y/N): "))).strip().lower()
+    if confirm != "y":
+        print(yellow("✗ Cancelled."))
+        return
+    grouped = group_by_type(entries)
+    out = ["# Memory Index", ""]
+    for t in TYPE_META.keys():
+        items = grouped[t]
+        if not items:
+            continue
+        emoji, _, label = TYPE_META[t]
+        out.append(f"## {emoji} {label}")
+        out.append("")
+        for e in items:
+            out.append(f"- [{e['name']}]({e['file']}) — {e['description']}")
+        out.append("")
+    INDEX_FILE.write_text("\n".join(out).rstrip() + "\n")
+    print(green(f"✓ Rebuilt {INDEX_FILE.name} with {len(entries)} entries."))
+
+
+def cmd_stats(entries: list[dict]) -> None:
+    grouped = group_by_type(entries)
+    print()
+    print(blue(bold("📊  Memory Stats")))
+    print(dim(f"    {MEMORY_DIR}"))
+    print()
+    print(f"    {bold(str(len(entries)).rjust(4))}   {bold('TOTAL')}")
+    for t in TYPE_META.keys():
+        items = grouped[t]
+        if items:
+            emoji, color, label = TYPE_META[t]
+            count = color(str(len(items)).rjust(4))
+            print(f"    {count}   {emoji}  {color(label)}")
+
+    print()
+    if INDEX_FILE.exists():
+        index_text = INDEX_FILE.read_text()
+        index_refs = set(re.findall(r"\]\(([\w./-]+\.md)\)", index_text))
+        files_on_disk = {e["file"] for e in entries}
+        orphan_refs = index_refs - files_on_disk
+        missing_refs = files_on_disk - index_refs
+        print(blue(bold(f"🔗  Index sanity ({INDEX_FILE.name})")))
+        print(f"    {str(len(index_refs)).rjust(4)}   referenced files")
+        if orphan_refs:
+            print(f"    {red(str(len(orphan_refs)).rjust(4))}   {red('orphan refs (in index, missing on disk)')}")
+            for f in sorted(orphan_refs):
+                print(red(f"         - {f}"))
+        else:
+            print(f"    {green('   0')}   orphan refs")
+        if missing_refs:
+            print(f"    {yellow(str(len(missing_refs)).rjust(4))}   {yellow('files on disk not in index')}")
+            for f in sorted(missing_refs):
+                print(yellow(f"         - {f}"))
+        else:
+            print(f"    {green('   0')}   files on disk not in index")
+    else:
+        print(red(f"    ✗ No index file at {INDEX_FILE}"))
+
+    print()
+    print(blue(bold("🕒  Most recently modified")))
+    last_modified = sorted(entries, key=lambda e: e["path"].stat().st_mtime, reverse=True)[:5]
+    for e in last_modified:
+        ts = datetime.fromtimestamp(e["path"].stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        emoji = TYPE_META.get(e["type"], TYPE_META["?"])[0]
+        print(f"    {dim(ts)}  {emoji}  {e['file']}")
+    print()
+
+
+def render_menu() -> None:
+    width = 60
+    print()
+    print(blue("╔" + "═" * (width - 2) + "╗"))
+    title = " Claude Memory Observer — Bonfire workspace "
+    print(blue("║") + bold(title.center(width - 2)) + blue("║"))
+    print(blue("╠" + "═" * (width - 2) + "╣"))
+    items = [
+        ("1", "📋", "List all (grouped by type)"),
+        ("2", "👁 ", "View entry"),
+        ("3", "✏️ ", "Edit entry"),
+        ("4", "🗑 ", "Delete entry"),
+        ("5", "➕", "Add new entry"),
+        ("6", "🔎", "Search"),
+        ("7", "🔧", "Rebuild MEMORY.md"),
+        ("8", "📊", "Stats / index sanity"),
+        ("q", "🚪", "Quit"),
+    ]
+    for key, icon, label in items:
+        raw = f"  [{key}]  {icon}  {label}"
+        line = f"  {bold(f'[{key}]')}  {icon}  {label}"
+        pad = width - 2 - len(raw)
+        print(blue("║") + line + " " * max(0, pad) + blue("║"))
+    print(blue("╚" + "═" * (width - 2) + "╝"))
+
+
+def main() -> int:
+    if not MEMORY_DIR.exists():
+        print(red(f"✗ ERROR: memory dir not found: {MEMORY_DIR}"), file=sys.stderr)
+        print(dim("  Override with $CLAUDE_MEMORY_DIR or --memory-dir <path>"), file=sys.stderr)
+        print(dim(f"  (default derives from cwd: {Path.cwd()})"), file=sys.stderr)
+        return 1
+    cmd_stats(load_all())
+    while True:
+        entries = load_all()
+        render_menu()
+        choice = input(cyan("→ Choose: ")).strip().lower()
+        if choice == "q":
+            print(green("✓ Bye."))
+            return 0
+        elif choice == "1":
+            cmd_list(entries)
+        elif choice == "2":
+            cmd_view(entries)
+        elif choice == "3":
+            cmd_edit(entries)
+        elif choice == "4":
+            cmd_delete(entries)
+        elif choice == "5":
+            cmd_add()
+        elif choice == "6":
+            cmd_search(entries)
+        elif choice == "7":
+            cmd_rebuild(entries)
+        elif choice == "8":
+            cmd_stats(entries)
+        else:
+            print(red("✗ Unknown choice."))
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print(yellow("\n✗ Interrupted."))
+        sys.exit(130)
