@@ -65,10 +65,15 @@ Commands are grouped into four sections in the menu:
 > Both Wipe and Nuke require typed confirmation and offer a timestamped
 > backup by default. See [Caveats](#%EF%B8%8F-caveats) for the full safety design.
 
+> **Hop between projects** without restarting: the launcher (shown on every
+> run) lists every Claude memory store on your machine, so you can switch
+> from your work project's memory to your side project's memory in one
+> keystroke. See [Launcher](#-launcher-runs-on-every-launch) below.
+
 ## 🚀 Quickstart
 
-**Run it from inside your Claude Code project directory** — that's how the
-script finds the right memory store automatically:
+**Run it from inside your Claude Code project directory** — that way the
+launcher will pre-select that project's memory as the default:
 
 ```bash
 cd ~/code/your-claude-project
@@ -91,12 +96,12 @@ cd ~/code/your-claude-project
 claude-memory-observe
 ```
 
-## 🆕 First run — pick a memory store
+## 🎯 Launcher (runs on every launch)
 
-Every launch starts with a picker that confirms which project's memory you
-want to operate on. The cwd-detected dir is option `[1]` and is the
-**default** (just press Enter); other discovered dirs are listed below;
-`[x]` exits. This makes it explicit which memory you're about to edit and
+Every invocation starts with a launcher screen that confirms which project's
+memory you want to operate on. The cwd-detected dir is option `[1]` and is
+the **default** (just press Enter); other discovered memory dirs are listed
+below; `[x]` exits. This makes the active store explicit on every run and
 lets you hop between projects without restarting.
 
 ```
@@ -162,27 +167,27 @@ main menu.
 
 ## ⚙️ Configuration
 
-The memory directory is resolved with this precedence (highest first):
+How the active memory directory is decided, in order of precedence:
 
-1. `--memory-dir <path>` CLI flag
-2. `$CLAUDE_MEMORY_DIR` environment variable
-3. Default: `~/.claude/projects/<encoded-cwd>/memory`
+| Precedence | Source | Behavior |
+|---|---|---|
+| 1 (highest) | `--memory-dir <path>` flag | Used directly. **Launcher is skipped.** |
+| 2 | `$CLAUDE_MEMORY_DIR` env var | Used directly. **Launcher is skipped.** |
+| 3 (default) | `~/.claude/projects/<encoded-cwd>/memory` | Pre-selected as `[1]` in the launcher; user confirms with Enter or picks a different one. |
 
 `<encoded-cwd>` is your absolute working directory with `/` replaced by `-`.
+This mirrors how Claude Code itself keys auto-memory by cwd.
 
-> **Example** — running from `/Users/me/code/myproject` resolves to:
+> **Example** — running from `/Users/me/code/myproject` resolves the default to:
 > ```
 > ~/.claude/projects/-Users-me-code-myproject/memory
 > ```
 
-This mirrors how Claude Code itself keys auto-memory by `cwd`. The flag and
-env-var overrides are your safety valves if the convention changes.
-
 ```bash
-# Explicit path
+# Explicit path — skips the launcher
 ./claude-memory-observe.py --memory-dir ~/.claude/projects/-Users-me-code-myproject/memory
 
-# Or via env var
+# Or via env var — also skips the launcher
 CLAUDE_MEMORY_DIR=~/.claude/projects/-Users-me-code-myproject/memory ./claude-memory-observe.py
 ```
 
