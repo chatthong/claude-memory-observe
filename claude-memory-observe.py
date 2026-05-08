@@ -424,7 +424,8 @@ def cmd_rebuild(entries: list[dict]) -> None:
 def cmd_wipe() -> None:
     entries = load_all()
     print()
-    print(red(bold("🔥  Wipe ALL memory")))
+    print(red(bold(f"🔥  Wipe memory: {MEMORY_DIR.parent.name}")))
+    print(dim("    (only this project's memory — other projects' memory dirs are untouched)"))
     print()
     print(f"  Target dir : {bold(str(MEMORY_DIR))}")
     print(f"  Entries    : {bold(str(len(entries)))} files")
@@ -516,20 +517,30 @@ def render_menu() -> None:
     inner = width - 2
 
     # Subtitle: encoded project key + entry count
-    encoded = MEMORY_DIR.parent.name
+    encoded_full = MEMORY_DIR.parent.name
     try:
         n_entries = sum(1 for f in MEMORY_DIR.glob("*.md") if f.name != "MEMORY.md")
     except OSError:
         n_entries = 0
-    subtitle_plain = f"{encoded}  ·  {n_entries} entries"
+    encoded_sub = encoded_full
+    subtitle_plain = f"{encoded_sub}  ·  {n_entries} entries"
     if display_width(subtitle_plain) > inner - 4:
         suffix = f"…  ·  {n_entries} entries"
         max_enc = inner - 4 - display_width(suffix)
         if max_enc > 5:
-            encoded = encoded[: max_enc] + "…"
-            subtitle_plain = f"{encoded}  ·  {n_entries} entries"
+            encoded_sub = encoded_full[: max_enc] + "…"
+            subtitle_plain = f"{encoded_sub}  ·  {n_entries} entries"
         else:
             subtitle_plain = f"{n_entries} entries"
+
+    # Wipe label: show which memory dir gets wiped (truncate if needed)
+    wipe_prefix = "Wipe memory ("
+    wipe_overhead = display_width(f"     [w]  {wipe_prefix})")
+    wipe_avail = inner - wipe_overhead - 1
+    wipe_name = encoded_full
+    if len(wipe_name) > wipe_avail and wipe_avail > 5:
+        wipe_name = wipe_name[: wipe_avail - 1] + "…"
+    wipe_label = f"{wipe_prefix}{wipe_name})"
 
     print()
     print(blue("╔" + "═" * inner + "╗"))
@@ -553,7 +564,7 @@ def render_menu() -> None:
             ("8", "Stats / index sanity"),
         ]),
         (red,    "DANGER ZONE", [
-            ("w", "Wipe ALL memory"),
+            ("w", wipe_label),
         ]),
     ]
     for color, header, items in sections:

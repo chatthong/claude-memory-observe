@@ -42,7 +42,7 @@ The menu groups commands by intent — **READ**, **MODIFY**, **MAINTAIN**, **DAN
 | MODIFY | `[6]` Delete | With confirmation, auto-strips the index line |
 | MAINTAIN | `[7]` Rebuild | Regenerate `MEMORY.md` from frontmatter |
 | MAINTAIN | `[8]` Stats | Counts per type, orphan / missing index refs, recent edits |
-| DANGER ZONE | `[w]` Wipe | Destroy ALL memory (typed-confirm + optional timestamped backup) |
+| DANGER ZONE | `[w]` Wipe | Destroy the **currently-selected** memory dir only (typed-confirm + optional timestamped backup). Other projects' memory dirs are untouched. |
 
 ## 🚀 Quickstart
 
@@ -84,7 +84,7 @@ cd claude-memory-observe
 ║     [8]  Stats / index sanity                                      ║
 ║                                                                    ║
 ║  DANGER ZONE                                                       ║
-║     [w]  Wipe ALL memory                                           ║
+║     [w]  Wipe memory (-Users-me-code-myproject)                    ║
 ║                                                                    ║
 ║     [q]  Quit                                                      ║
 ╚════════════════════════════════════════════════════════════════════╝
@@ -152,10 +152,14 @@ The index (`MEMORY.md`) is generated from these. **Rebuilding overwrites it.**
 - **"Rebuild MEMORY.md" is destructive.** Manual sub-groupings, custom
   ordering inside groups, and any free-form notes you wrote in the index
   will be lost. The script warns first and asks for confirmation.
-- **"Wipe" is _very_ destructive.** It deletes every entry. To prevent
-  accidental triggering it asks you to type the project key (e.g.
-  `-Users-me-code-myproject`) — a y/N prompt would be too easy. By default
-  it offers to move the existing memory dir to a timestamped backup
+- **"Wipe" is _very_ destructive — but scoped to one project.** It deletes
+  every entry **in the currently-selected memory dir only**. Other projects'
+  memory dirs (anything else under `~/.claude/projects/`) are untouched.
+  The menu label spells out which dir will be wiped, e.g.
+  `[w]  Wipe memory (-Users-me-code-myproject)`. To prevent accidental
+  triggering, the command then asks you to type the project key exactly
+  — a y/N prompt would be too easy. By default it offers to move the
+  existing memory dir to a timestamped backup
   (`memory.bak.<YYYYMMDD-HHMMSS>/`) before recreating an empty one.
 - **Frontmatter parsing is regex-based**, not a full YAML parser. Stick to
   one-key-per-line `key: value` — no nested objects or multi-line strings.
