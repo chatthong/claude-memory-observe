@@ -47,7 +47,11 @@ The menu groups commands by intent — **READ**, **MODIFY**, **MAINTAIN**, **DAN
 
 ## 🚀 Quickstart
 
+**Run it from inside your Claude Code project directory** — that's how the
+script finds the right memory store automatically:
+
 ```bash
+cd ~/code/your-claude-project
 curl -O https://raw.githubusercontent.com/chatthong/claude-memory-observe/main/claude-memory-observe.py
 chmod +x claude-memory-observe.py
 ./claude-memory-observe.py
@@ -55,15 +59,55 @@ chmod +x claude-memory-observe.py
 
 That's it. No `pip install`, no virtualenv, no third-party deps. Just **Python 3.10+**.
 
-Or clone:
+If you'd rather keep the script in a shared location:
 
 ```bash
-git clone https://github.com/chatthong/claude-memory-observe.git
-cd claude-memory-observe
-./claude-memory-observe.py
+# Once — install
+git clone https://github.com/chatthong/claude-memory-observe.git ~/tools/claude-memory-observe
+ln -s ~/tools/claude-memory-observe/claude-memory-observe.py /usr/local/bin/claude-memory-observe
+
+# Then — from any project dir
+cd ~/code/your-claude-project
+claude-memory-observe
 ```
 
-## 📺 What it looks like
+## 🆕 First run
+
+If you launch the script from a directory that has no Claude memory yet
+(e.g. a brand-new project, or just from your home dir), you get a friendly
+picker that surfaces every memory dir already on your machine and lets you
+hop into one — or exit cleanly:
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════════════╗
+║                           ✗  No Claude memory directory found                            ║
+╠══════════════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                          ║
+║  💡 Tip:  Launch this from inside your Claude Code project dir so it                     ║
+║          auto-detects that project's memory. The picker below is a fallback.             ║
+║          Example: cd ~/code/myproject && ./claude-memory-observe.py                      ║
+║                                                                                          ║
+║  Looked at:                                                                              ║
+║    /Users/me/.claude/projects/-Users-me-Desktop/memory                                   ║
+║                                                                                          ║
+║  Why:                                                                                    ║
+║    Claude Code keys auto-memory by the directory it was launched from.                   ║
+║    The current working dir doesn't have a memory store yet.                              ║
+║                                                                                          ║
+║  Existing memory dirs on this machine:                                                   ║
+║    [ 1]  -Users-me-code-myproject       42 entries  ·  2026-05-08                        ║
+║    [ 2]  -Users-me-code-otherproject     5 entries  ·  2026-04-12                        ║
+║    [ x]  Exit                                                                            ║
+║                                                                                          ║
+║  Or override explicitly:                                                                 ║
+║    ./claude-memory-observe.py --memory-dir <path>                                        ║
+║    CLAUDE_MEMORY_DIR=<path> ./claude-memory-observe.py                                   ║
+║                                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════════════════════╝
+→ Pick:
+```
+
+## 📺 Main menu
 
 ```
 ╔════════════════════════════════════════════════════════════════════╗
