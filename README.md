@@ -8,6 +8,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#)
 [![Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)](#)
 [![Single file](https://img.shields.io/badge/single--file-yes-orange)](#)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 *One file. Zero dependencies. Just `python3 claude-memory-observe.py`.*
 
@@ -156,4 +157,4 @@ there's a strong reason. No third-party deps unless absolutely necessary.
 
 ## License
 
-TBD.
+[MIT](LICENSE) © chatthong
